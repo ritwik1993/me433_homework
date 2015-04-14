@@ -1,5 +1,5 @@
 /* 
- * File:   hw4.c
+ * File:   hw1.c
  * Author: ritwik
  *
  * Created on April 1, 2015, 5:29 PM
@@ -7,6 +7,8 @@
 
 #include<xc.h> // processor SFR definitions
 #include<sys/attribs.h> // __ISR macro
+#include "i2c_display.h"
+#include "oled_library.h"
 
 // DEVCFG0
 #pragma config DEBUG = OFF // no debugging
@@ -47,7 +49,7 @@ int readADC(void);
 
 int main() {
     int val;
-
+    char message[100];
     // startup
     __builtin_disable_interrupts();
     // set the CP0 CONFIG register to indicate that
@@ -63,7 +65,8 @@ int main() {
     // disable JTAG to be able to use TDI, TDO, TCK, TMS as digital
     DDPCONbits.JTAGEN = 0;
     __builtin_enable_interrupts();
-    
+    //set up display
+    display_init();        
     // set up USER pin as input
     ANSELBbits.ANSB13 = 0; // B13 as digital 
     TRISBbits.TRISB13 = 1; //make B13 as input
@@ -90,6 +93,11 @@ int main() {
     AD1CON3bits.ADCS = 3;
     AD1CHSbits.CH0SA = 0;
     AD1CON1bits.ADON = 1;
+    
+    int a=1337;
+    sprintf(message,"Hello world %d!",a);
+    write_string(message,28,32);
+    display_draw();
 
     while (1) {
         // invert pin every 0.5s, set PWM duty cycle % to the pot voltage output %
