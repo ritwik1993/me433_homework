@@ -2,6 +2,8 @@
 #include "i2c_display.h"
 #include <stdlib.h>
 
+# define MAX_ACC 16000
+
 // lookup table for all of the ascii characters
 static const char ASCII[96][5] = {
  {0x00, 0x00, 0x00, 0x00, 0x00} // 20  (space)
@@ -143,14 +145,14 @@ void oled_accels(short ax,short ay)
     int oy = 32;
         //y acceleration
         if(ay>0){
-          for (length=oy; length>(33-ay*25/16000.0); length--){
+          for (length=oy; length>(33-ay*25/MAX_ACC); length--){
             for(width=-2;width<thickness-2;width++){
                 display_pixel_set(length,ox+width,1);
             }
           }
         }
         else{
-          for (length=oy; length<(33-ay*25/16000.0); length++){
+          for (length=oy; length<(33-ay*25/MAX_ACC); length++){
             for(width=-2;width<thickness-2;width++){
                 display_pixel_set(length,ox+width,1);
             }
@@ -158,14 +160,14 @@ void oled_accels(short ax,short ay)
 
         }       
         if(ax>0){
-          for (length=ox;length>65-ax*32/16000.0;length--){
+          for (length=ox;length>65-ax*32/MAX_ACC;length--){
             for (width=-2;width<thickness-2;width++){
                 display_pixel_set(oy+width,length,1);
             }
           }
         }
         else{
-          for (length=ox;length<65-ax*32/16000.0;length++){
+          for (length=ox;length<65-ax*32/MAX_ACC;length++){
             for (width=-2;width<thickness-2;width++){
                 display_pixel_set(oy+width,length,1);
             }
