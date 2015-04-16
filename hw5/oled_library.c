@@ -139,33 +139,35 @@ void oled_accels(short ax,short ay)
 {
     int length, width;
     int thickness = 5 ; //5 pixels
+    int ox = 64;
+    int oy = 32;
         //y acceleration
         if(ay>0){
-          for (length=32; length>(33-ay*25/16000.0); length--){
+          for (length=oy; length>(33-ay*25/16000.0); length--){
             for(width=-2;width<thickness-2;width++){
-                display_pixel_set(length,64+width,1);
+                display_pixel_set(length,ox+width,1);
             }
           }
         }
         else{
-          for (length=32; length<(33-ay*25/16000.0); length++){
+          for (length=oy; length<(33-ay*25/16000.0); length++){
             for(width=-2;width<thickness-2;width++){
-                display_pixel_set(length,64+width,1);
+                display_pixel_set(length,ox+width,1);
             }
           }
 
         }       
         if(ax>0){
-          for (length=64;length>65-ax*32/16000.0;length--){
+          for (length=ox;length>65-ax*32/16000.0;length--){
             for (width=-2;width<thickness-2;width++){
-                display_pixel_set(32+width,length,1);
+                display_pixel_set(oy+width,length,1);
             }
           }
         }
         else{
-          for (length=64;length<65-ax*32/16000.0;length++){
+          for (length=ox;length<65-ax*32/16000.0;length++){
             for (width=-2;width<thickness-2;width++){
-                display_pixel_set(32+width,length,1);
+                display_pixel_set(oy+width,length,1);
             }
           }
 
