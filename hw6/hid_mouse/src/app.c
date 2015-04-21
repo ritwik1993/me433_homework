@@ -53,20 +53,14 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 // *****************************************************************************
 // *****************************************************************************
 
-#include "system_definitions.h"
 #include "app.h"
+
 
 // *****************************************************************************
 // *****************************************************************************
 // Section: Global Data Definitions
 // *****************************************************************************
 // *****************************************************************************
-
-/* Recieve data buffer */
-uint8_t receiveDataBuffer[64] APP_MAKE_BUFFER_DMA_READY;
-
-/* Transmit data buffer */
-uint8_t  transmitDataBuffer[64] APP_MAKE_BUFFER_DMA_READY;
 
 // *****************************************************************************
 /* Application Data
@@ -85,151 +79,178 @@ uint8_t  transmitDataBuffer[64] APP_MAKE_BUFFER_DMA_READY;
 
 APP_DATA appData;
 
+/* Mouse Report */
+MOUSE_REPORT mouseReport APP_MAKE_BUFFER_DMA_READY;
+MOUSE_REPORT mouseReportPrevious APP_MAKE_BUFFER_DMA_READY;
+
+
 // *****************************************************************************
 // *****************************************************************************
 // Section: Application Callback Functions
 // *****************************************************************************
 // *****************************************************************************
 
-USB_DEVICE_HID_EVENT_RESPONSE APP_USBDeviceHIDEventHandler
-(
-    USB_DEVICE_HID_INDEX iHID,
-    USB_DEVICE_HID_EVENT event,
-    void * eventData,
-    uintptr_t userData
-)
+void APP_USBDeviceHIDEventHandler(USB_DEVICE_HID_INDEX hidInstance,
+        USB_DEVICE_HID_EVENT event, void * eventData, uintptr_t userData)
 {
-    USB_DEVICE_HID_EVENT_DATA_REPORT_SENT * reportSent;
-    USB_DEVICE_HID_EVENT_DATA_REPORT_RECEIVED * reportReceived;
+    APP_DATA * appData = (APP_DATA *)userData;
 
-    /* Check type of event */
-    switch (event)
+    switch(event)
     {
         case USB_DEVICE_HID_EVENT_REPORT_SENT:
 
-            /* The eventData parameter will be USB_DEVICE_HID_EVENT_REPORT_SENT
-             * pointer type containing details about the report that was
-             * sent. */
-            reportSent = (USB_DEVICE_HID_EVENT_DATA_REPORT_SENT *) eventData;
-            if(reportSent->handle == appData.txTransferHandle )
-            {
-                // Transfer progressed.
-                appData.hidDataTransmitted = true;
-            }
-            
+            /* This means the mouse report was sent.
+             We are free to send another report */
+
+            appData->isMouseReportSendBusy = false;
             break;
 
         case USB_DEVICE_HID_EVENT_REPORT_RECEIVED:
 
-            /* The eventData parameter will be USB_DEVICE_HID_EVENT_REPORT_RECEIVED
-             * pointer type containing details about the report that was
-             * received. */
-
-            reportReceived = (USB_DEVICE_HID_EVENT_DATA_REPORT_RECEIVED *) eventData;
-            if(reportReceived->handle == appData.rxTransferHandle )
-            {
-                // Transfer progressed.
-                appData.hidDataReceived = true;
-            }
-          
+            /* Dont care for other event in this demo */
             break;
 
         case USB_DEVICE_HID_EVENT_SET_IDLE:
 
-            /* For now we just accept this request as is. We acknowledge
-             * this request using the USB_DEVICE_HID_ControlStatus()
-             * function with a USB_DEVICE_CONTROL_STATUS_OK flag */
+             /* Acknowledge the Control Write Transfer */
+           USB_DEVICE_ControlStatus(appData->deviceHandle, USB_DEVICE_CONTROL_STATUS_OK);
 
-            USB_DEVICE_ControlStatus(appData.usbDevHandle, USB_DEVICE_CONTROL_STATUS_OK);
-
-            /* Save Idle rate recieved from Host */
-            appData.idleRate = ((USB_DEVICE_HID_EVENT_DATA_SET_IDLE*)eventData)->duration;
+            /* save Idle rate received from Host */
+            appData->idleRate = ((USB_DEVICE_HID_EVENT_DATA_SET_IDLE*)eventData)->duration;
             break;
 
         case USB_DEVICE_HID_EVENT_GET_IDLE:
 
             /* Host is requesting for Idle rate. Now send the Idle rate */
-            USB_DEVICE_ControlSend(appData.usbDevHandle, & (appData.idleRate),1);
+            USB_DEVICE_ControlSend(appData->deviceHandle, &(appData->idleRate),1);
 
-            /* On successfully reciveing Idle rate, the Host would acknowledge back with a
-               Zero Length packet. The HID function drvier returns an event
+            /* On successfully receiving Idle rate, the Host would acknowledge back with a
+               Zero Length packet. The HID function driver returns an event
                USB_DEVICE_HID_EVENT_CONTROL_TRANSFER_DATA_SENT to the application upon
                receiving this Zero Length packet from Host.
                USB_DEVICE_HID_EVENT_CONTROL_TRANSFER_DATA_SENT event indicates this control transfer
-               event is complete */
+               event is complete */ 
 
             break;
+
+        case USB_DEVICE_HID_EVENT_SET_PROTOCOL:
+            /* Host is trying set protocol. Now receive the protocol and save */
+            appData->activeProtocol = *(USB_HID_PROTOCOL_CODE *)eventData;
+
+              /* Acknowledge the Control Write Transfer */
+            USB_DEVICE_ControlStatus(appData->deviceHandle, USB_DEVICE_CONTROL_STATUS_OK);
+            break;
+
+        case  USB_DEVICE_HID_EVENT_GET_PROTOCOL:
+
+            /* Host is requesting for Current Protocol. Now send the Idle rate */
+             USB_DEVICE_ControlSend(appData->deviceHandle, &(appData->activeProtocol), 1);
+
+             /* On successfully receiving Idle rate, the Host would acknowledge
+               back with a Zero Length packet. The HID function driver returns
+               an event USB_DEVICE_HID_EVENT_CONTROL_TRANSFER_DATA_SENT to the
+               application upon receiving this Zero Length packet from Host.
+               USB_DEVICE_HID_EVENT_CONTROL_TRANSFER_DATA_SENT event indicates
+               this control transfer event is complete */
+             break;
+
+        case USB_DEVICE_HID_EVENT_CONTROL_TRANSFER_DATA_SENT:
+            break;
+
         default:
-            // Nothing to do.
             break;
     }
-    return USB_DEVICE_HID_EVENT_RESPONSE_NONE;
 }
+
+/*******************************************************************************
+  Function:
+    void APP_USBDeviceEventHandler (USB_DEVICE_EVENT event,
+        USB_DEVICE_EVENT_DATA * eventData)
+
+  Summary:
+    Event callback generated by USB device layer.
+
+  Description:
+    This event handler will handle all device layer events.
+
+  Parameters:
+    None.
+
+  Returns:
+    None.
+*/
 
 void APP_USBDeviceEventHandler(USB_DEVICE_EVENT event, void * eventData, uintptr_t context)
 {
+    USB_DEVICE_EVENT_DATA_CONFIGURED * configurationValue;
     switch(event)
     {
+        case USB_DEVICE_EVENT_SOF:
+            /* This event is used for switch debounce. This flag is reset
+             * by the switch process routine. */
+            appData.sofEventHasOccurred = true;
+            appData.setIdleTimer++;
+            break;
         case USB_DEVICE_EVENT_RESET:
         case USB_DEVICE_EVENT_DECONFIGURED:
-
-            /* Host has de configured the device or a bus reset has happened.
-             * Device layer is going to de-initialize all function drivers.
-             * Hence close handles to all function drivers (Only if they are
-             * opened previously. */
-
-            BSP_LEDOn  (APP_USB_LED_1);
-            BSP_LEDOn  (APP_USB_LED_2);
-            BSP_LEDOff (APP_USB_LED_3);
-            appData.deviceConfigured = false;
+        
+            /* Device got deconfigured */
+            
+            appData.isConfigured = false;
+            appData.isMouseReportSendBusy = false;
             appData.state = APP_STATE_WAIT_FOR_CONFIGURATION;
+            appData.emulateMouse = true;
+            BSP_LEDOn ( APP_USB_LED_1 );
+            BSP_LEDOn ( APP_USB_LED_2 );
+            BSP_LEDOff ( APP_USB_LED_3 );
+
             break;
 
         case USB_DEVICE_EVENT_CONFIGURED:
-            /* Set the flag indicating device is configured. */
-            appData.deviceConfigured = true;
 
-            /* Save the other details for later use. */
-            appData.configurationValue = ((USB_DEVICE_EVENT_DATA_CONFIGURED*)eventData)->configurationValue;
+            /* Device is configured */
+            configurationValue = (USB_DEVICE_EVENT_DATA_CONFIGURED *)eventData;
+            if(configurationValue->configurationValue == 1)
+            {
+                appData.isConfigured = true;
+                
+                BSP_LEDOff ( APP_USB_LED_1 );
+                BSP_LEDOff ( APP_USB_LED_2 );
+                BSP_LEDOn ( APP_USB_LED_3 );
 
-            /* Register application HID event handler */
-            USB_DEVICE_HID_EventHandlerSet(USB_DEVICE_HID_INDEX_0, APP_USBDeviceHIDEventHandler, (uintptr_t)&appData);
+                /* Register the Application HID Event Handler. */
 
-            /* Update the LEDs */
-            BSP_LEDOff (APP_USB_LED_1);
-            BSP_LEDOff (APP_USB_LED_2);
-            BSP_LEDOn  (APP_USB_LED_3);
-
-            break;
-
-        case USB_DEVICE_EVENT_SUSPENDED:
-
-            /* Switch on green and orange, switch off red */
-            BSP_LEDOff (APP_USB_LED_1);
-            BSP_LEDOn  (APP_USB_LED_2);
-            BSP_LEDOn  (APP_USB_LED_3);
+                USB_DEVICE_HID_EventHandlerSet(appData.hidInstance,
+                        APP_USBDeviceHIDEventHandler, (uintptr_t)&appData);
+            }
             break;
 
         case USB_DEVICE_EVENT_POWER_DETECTED:
 
             /* VBUS was detected. We can attach the device */
-
-            USB_DEVICE_Attach (appData.usbDevHandle);
+            USB_DEVICE_Attach(appData.deviceHandle);
             break;
 
         case USB_DEVICE_EVENT_POWER_REMOVED:
 
-            /* VBUS is not available */
-            USB_DEVICE_Detach(appData.usbDevHandle);
+            /* VBUS is not available any more. Detach the device. */
+            USB_DEVICE_Detach(appData.deviceHandle);
             break;
 
-        /* These events are not used in this demo */
+        case USB_DEVICE_EVENT_SUSPENDED:
+            BSP_LEDOff ( APP_USB_LED_1 );
+            BSP_LEDOn ( APP_USB_LED_2 );
+            BSP_LEDOn ( APP_USB_LED_3 );
+            break;
+
         case USB_DEVICE_EVENT_RESUMED:
         case USB_DEVICE_EVENT_ERROR:
         default:
             break;
-    }
+
+    } 
 }
+
 
 // *****************************************************************************
 // *****************************************************************************
@@ -237,8 +258,50 @@ void APP_USBDeviceEventHandler(USB_DEVICE_EVENT event, void * eventData, uintptr
 // *****************************************************************************
 // *****************************************************************************
 
-/* TODO:  Add any necessary local functions.
-*/
+/********************************************************
+ * Application switch press routine
+ ********************************************************/
+
+void APP_ProcessSwitchPress(void)
+{
+    /* This function checks if the switch is pressed and then
+     * debounces the switch press*/
+    if(BSP_SWITCH_STATE_PRESSED == (BSP_SwitchStateGet(APP_USB_SWITCH_1)))
+    {
+        if(appData.ignoreSwitchPress)
+        {
+            /* This means the key press is in progress */
+            if(appData.sofEventHasOccurred)
+            {
+                /* A timer event has occurred. Update the debounce timer */
+                appData.switchDebounceTimer ++;
+                appData.sofEventHasOccurred = false;
+                if(appData.switchDebounceTimer == APP_USB_SWITCH_DEBOUNCE_COUNT)
+                {
+                    /* Indicate that we have valid switch press. The switch is
+                     * pressed flag will be cleared by the application tasks
+                     * routine. We should be ready for the next key press.*/
+                    appData.isSwitchPressed = true;
+                    appData.switchDebounceTimer = 0;
+                    appData.ignoreSwitchPress = false;
+                }
+            }
+        }
+        else
+        {
+            /* We have a fresh key press */
+            appData.ignoreSwitchPress = true;
+            appData.switchDebounceTimer = 0;
+        }
+    }
+    else
+    {
+        /* No key press. Reset all the indicators. */
+        appData.ignoreSwitchPress = false;
+        appData.switchDebounceTimer = 0;
+        appData.sofEventHasOccurred = false;
+    }
+}
 
 
 // *****************************************************************************
@@ -260,14 +323,13 @@ void APP_Initialize ( void )
     /* Place the App state machine in its initial state. */
     appData.state = APP_STATE_INIT;
     
-    appData.usbDevHandle = USB_DEVICE_HANDLE_INVALID;
-    appData.deviceConfigured = false;
-    appData.txTransferHandle = USB_DEVICE_HID_TRANSFER_HANDLE_INVALID;
-    appData.rxTransferHandle = USB_DEVICE_HID_TRANSFER_HANDLE_INVALID;
-    appData.hidDataReceived = false;
-    appData.hidDataTransmitted = true;
-    appData.receiveDataBuffer = &receiveDataBuffer[0];
-    appData.transmitDataBuffer = &transmitDataBuffer[0];
+    appData.deviceHandle  = USB_DEVICE_HANDLE_INVALID;
+    appData.isConfigured = false;
+    appData.emulateMouse = true;
+    appData.hidInstance = 0;
+    appData.isMouseReportSendBusy = false;
+    appData.isSwitchPressed = false;
+    appData.ignoreSwitchPress = false;
 }
 
 
@@ -279,23 +341,29 @@ void APP_Initialize ( void )
     See prototype in app.h.
  */
 
-void APP_Tasks (void )
+void APP_Tasks ( void )
 {
+    static int8_t   vector = 0;
+    static uint8_t  movement_length = 0;
+    static bool     sent_dont_move = false;
 
-    /* Check if device is configured.  See if it is configured with correct
-     * configuration value  */
-
-    switch(appData.state)
+    int8_t dir_table[] ={-4,-4,-4, 0, 4, 4, 4, 0};
+	
+    /* Check the application's current state. */
+    switch ( appData.state )
     {
+        /* Application's initial state. */
         case APP_STATE_INIT:
+        {
+		    /* Open the device layer */
+            appData.deviceHandle = USB_DEVICE_Open( USB_DEVICE_INDEX_0,
+                    DRV_IO_INTENT_READWRITE );
 
-            /* Open the device layer */
-            appData.usbDevHandle = USB_DEVICE_Open( USB_DEVICE_INDEX_0, DRV_IO_INTENT_READWRITE );
-
-            if(appData.usbDevHandle != USB_DEVICE_HANDLE_INVALID)
+            if(appData.deviceHandle != USB_DEVICE_HANDLE_INVALID)
             {
                 /* Register a callback with device layer to get event notification (for end point 0) */
-                USB_DEVICE_EventHandlerSet(appData.usbDevHandle, APP_USBDeviceEventHandler, 0);
+                USB_DEVICE_EventHandlerSet(appData.deviceHandle,
+                        APP_USBDeviceEventHandler, 0);
 
                 appData.state = APP_STATE_WAIT_FOR_CONFIGURATION;
             }
@@ -304,99 +372,137 @@ void APP_Tasks (void )
                 /* The Device Layer is not ready to be opened. We should try
                  * again later. */
             }
-
             break;
+        }
 
         case APP_STATE_WAIT_FOR_CONFIGURATION:
 
-            if(appData.deviceConfigured == true)
-            {
-                /* Device is ready to run the main task */
-                appData.hidDataReceived = false;
-                appData.hidDataTransmitted = true;
-                appData.state = APP_STATE_MAIN_TASK;
+            /* Check if the device is configured. The 
+             * isConfigured flag is updated in the
+             * Device Event Handler */
 
-                /* Place a new read request. */
-                USB_DEVICE_HID_ReportReceive (USB_DEVICE_HID_INDEX_0,
-                        &appData.rxTransferHandle, appData.receiveDataBuffer, 64);
+            if(appData.isConfigured)
+            {
+                appData.state = APP_STATE_MOUSE_EMULATE;
             }
             break;
 
-        case APP_STATE_MAIN_TASK:
+        case APP_STATE_MOUSE_EMULATE:
 
-            if(!appData.deviceConfigured)
+            APP_ProcessSwitchPress();
+
+            /* The following logic rotates the mouse icon when
+             * a switch is pressed */
+
+            if(appData.isSwitchPressed)
             {
-                /* Device is not configured */
-                appData.state = APP_STATE_WAIT_FOR_CONFIGURATION;
+                /* Toggle the mouse emulation with each switch press */
+                appData.emulateMouse ^= 1;
+                appData.isSwitchPressed = false;
             }
-            else if( appData.hidDataReceived )
+
+            if(appData.emulateMouse)
             {
-                /* Look at the data the host sent, to see what
-                 * kind of application specific command it sent. */
+                sent_dont_move = false;
 
-                switch(appData.receiveDataBuffer[0])
+                if(movement_length > 50)
                 {
-                    case 0x80:
+                    appData.mouseButton[0] = MOUSE_BUTTON_STATE_RELEASED;
+                    appData.mouseButton[1] = MOUSE_BUTTON_STATE_RELEASED;
+                    appData.xCoordinate =(int8_t)dir_table[vector & 0x07] ;
+                    appData.yCoordinate =(int8_t)dir_table[(vector+2) & 0x07];
+                    vector ++;
+                    movement_length = 0;
+                }
+            }
+            else
+            { 
+                appData.mouseButton[0] = MOUSE_BUTTON_STATE_RELEASED;
+                appData.mouseButton[1] = MOUSE_BUTTON_STATE_RELEASED;
+                appData.xCoordinate = 0;
+                appData.yCoordinate = 0;
+            }
 
-                        /* Toggle on board LED1 to LED2. */
-                        BSP_LEDToggle( APP_USB_LED_1 );
-                        BSP_LEDToggle( APP_USB_LED_2 );
+            if(!appData.isMouseReportSendBusy)
+            {
+                if(((sent_dont_move == false) && (!appData.emulateMouse)) || (appData.emulateMouse))
+                {
 
-                        appData.hidDataReceived = false;
+                    /* This means we can send the mouse report. The
+                       isMouseReportBusy flag is updated in the HID Event Handler. */
 
-                        /* Place a new read request. */
-                        USB_DEVICE_HID_ReportReceive (USB_DEVICE_HID_INDEX_0,
-                                &appData.rxTransferHandle, appData.receiveDataBuffer, 64 );
+                    appData.isMouseReportSendBusy = true;
 
-                        break;
+                    /* Create the mouse report */
 
-                    case 0x81:
+                    MOUSE_ReportCreate(appData.xCoordinate, appData.yCoordinate,
+                            appData.mouseButton, &mouseReport);
 
-                        if(appData.hidDataTransmitted)
+                    if(memcmp((const void *)&mouseReportPrevious, (const void *)&mouseReport,
+                            (size_t)sizeof(mouseReport)) == 0)
+                    {
+                        /* Reports are same as previous report. However mouse reports
+                         * can be same as previous report as the co-ordinate positions are relative.
+                         * In that case it needs to be send */
+                        if((appData.xCoordinate == 0) && (appData.yCoordinate == 0))
                         {
-                            /* Echo back to the host PC the command we are fulfilling in
-                             * the first byte.  In this case, the Get Push-button State
-                             * command. */
-
-                            appData.transmitDataBuffer[0] = 0x81;
-
-                            if( BSP_SwitchStateGet(APP_USB_SWITCH_1) == BSP_SWITCH_STATE_PRESSED )
+                            /* If the coordinate positions are 0, that means there
+                             * is no relative change */
+                            if(appData.idleRate == 0)
                             {
-                                appData.transmitDataBuffer[1] = 0x00;
+                                appData.isMouseReportSendBusy = false;
                             }
                             else
                             {
-                                appData.transmitDataBuffer[1] = 0x01;
+                                /* Check the idle rate here. If idle rate time elapsed
+                                 * then the data will be sent. Idle rate resolution is
+                                 * 4 msec as per HID specification; possible range is
+                                 * between 4msec >= idlerate <= 1020 msec.
+                                 */
+                                if(appData.setIdleTimer * APP_USB_CONVERT_TO_MILLISECOND
+                                        >= appData.idleRate * 4)
+                                {
+                                    /* Send REPORT as idle time has elapsed */
+                                    appData.isMouseReportSendBusy = true;
+                                }
+                                else
+                                {
+                                    /* Do not send REPORT as idle time has not elapsed */
+                                    appData.isMouseReportSendBusy = false;
+                                }
                             }
-
-                            appData.hidDataTransmitted = false;
-
-                            /* Prepare the USB module to send the data packet to the host */
-                            USB_DEVICE_HID_ReportSend (USB_DEVICE_HID_INDEX_0,
-                                    &appData.txTransferHandle, appData.transmitDataBuffer, 64 );
-
-                            appData.hidDataReceived = false;
-
-                            /* Place a new read request. */
-                            USB_DEVICE_HID_ReportReceive (USB_DEVICE_HID_INDEX_0,
-                                    &appData.rxTransferHandle, appData.receiveDataBuffer, 64 );
                         }
-                        break;
 
-                    default:
-
-                        appData.hidDataReceived = false;
-
-                        /* Place a new read request. */
-                        USB_DEVICE_HID_ReportReceive (USB_DEVICE_HID_INDEX_0,
-                                &appData.rxTransferHandle, appData.receiveDataBuffer, 64 );
-                        break;
+                    }
+                    if(appData.isMouseReportSendBusy == true)
+                    {
+                        /* Copy the report sent to previous */
+                        memcpy((void *)&mouseReportPrevious, (const void *)&mouseReport,
+                                (size_t)sizeof(mouseReport));
+                        
+                        /* Send the mouse report. */
+                        USB_DEVICE_HID_ReportSend(appData.hidInstance,
+                            &appData.reportTransferHandle, (uint8_t*)&mouseReport,
+                            sizeof(MOUSE_REPORT));
+                        appData.setIdleTimer = 0;
+                    }
+                    movement_length ++;
+                    sent_dont_move = true;
                 }
             }
+
+            break;
+
         case APP_STATE_ERROR:
+
             break;
+
+        /* The default state should never be executed. */
         default:
+        {
+            /* TODO: Handle error in application's state machine. */
             break;
+        }
     }
 }
  

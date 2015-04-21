@@ -59,8 +59,7 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 #include <stdlib.h>
 #include "system_config.h"
 #include "system_definitions.h"
-#include "usb/usb_chapter_9.h"
-#include "usb/usb_device.h"
+#include "mouse.h"
 
 // *****************************************************************************
 // *****************************************************************************
@@ -81,18 +80,18 @@ SUBSTITUTE GOODS, TECHNOLOGY, SERVICES, OR ANY CLAIMS BY THIRD PARTIES
 
 typedef enum
 {
-    /* Application is initializing */
-    APP_STATE_INIT,
+	/* Application's state machine's initial state. */
+	APP_STATE_INIT=0,
 
-    /* Application is waiting for configuration */
+	/* Application waits for configuration in this state */
     APP_STATE_WAIT_FOR_CONFIGURATION,
 
-    /* Application is running the main tasks */
-    APP_STATE_MAIN_TASK,
+    /* Application runs mouse emulation in this state */
+    APP_STATE_MOUSE_EMULATE,
 
-    /* Application is in an error state */
+    /* Application error state */
     APP_STATE_ERROR
-            
+
 } APP_STATES;
 
 
@@ -114,35 +113,56 @@ typedef struct
     /* The application's current state */
     APP_STATES state;
 
-      /* Device layer handle returned by device layer open function */
-    USB_DEVICE_HANDLE  usbDevHandle;
+    /* device layer handle returned by device layer open function */
+    USB_DEVICE_HANDLE  deviceHandle;
 
-    /* Recieve data buffer */
-    uint8_t * receiveDataBuffer;
+    /* Is device configured */
+    bool isConfigured;
 
-    /* Transmit data buffer */
-    uint8_t * transmitDataBuffer;
+    /* If true, then mouse is emulated */
+    bool emulateMouse;
 
-    /* Device configured */
-    bool deviceConfigured;
+    /* Switch state variables*/
+    bool ignoreSwitchPress;
 
-    /* Send report transfer handle*/
-    USB_DEVICE_HID_TRANSFER_HANDLE txTransferHandle;
+    /* Tracks switch press*/
+    bool isSwitchPressed;
 
-    /* Receive report transfer handle */
-    USB_DEVICE_HID_TRANSFER_HANDLE rxTransferHandle;
+    /* Mouse x coordinate*/
+    MOUSE_COORDINATE xCoordinate;
 
-    /* Configuration value selected by the host*/
-    uint8_t configurationValue;
+    /* Mouse y coordinate*/
+    MOUSE_COORDINATE yCoordinate;
 
-    /* HID data received flag*/
-    bool hidDataReceived;
+    /* Mouse buttons*/
+    MOUSE_BUTTON_STATE mouseButton[MOUSE_BUTTON_NUMBERS];
 
-    /* HID data transmitted flag */
-    bool hidDataTransmitted;
+    /* HID instance associated with this app object*/
+    SYS_MODULE_INDEX hidInstance;
 
-     /* USB HID current Idle */
+    /* Transfer handle */
+    USB_DEVICE_HID_TRANSFER_HANDLE reportTransferHandle;
+
+    /* Device Layer System Module Object */
+    SYS_MODULE_OBJ deviceLayerObject;
+
+    /* USB HID active Protocol */
+    uint8_t activeProtocol;
+
+    /* USB HID current Idle */
     uint8_t idleRate;
+
+    /* Tracks the progress of the report send */
+    bool isMouseReportSendBusy;
+
+    /* Flag determines SOF event has occured */
+    bool sofEventHasOccurred;
+
+    /* Switch debounce timer */
+    unsigned int switchDebounceTimer;
+
+    /* SET IDLE timer */
+    uint16_t setIdleTimer;
 
 } APP_DATA;
 
@@ -167,12 +187,12 @@ typedef struct
     void APP_Initialize ( void )
 
   Summary:
-     MPLAB Harmony Demo application initialization routine
+     MPLAB Harmony application initialization routine.
 
   Description:
-    This routine initializes Harmony Demo application.  This function opens
-    the necessary drivers, initializes the timer and registers the application
-    callback with the USART driver.
+    This function initializes the Harmony application.  It places the 
+    application in its initial state and prepares it to run so that its 
+    APP_Tasks function can be called.
 
   Precondition:
     All other system initialization routines should be called before calling
@@ -227,11 +247,6 @@ void APP_Initialize ( void );
  */
 
 void APP_Tasks ( void );
-
-
-
-extern const USB_DEVICE_FUNCTION_REGISTRATION_TABLE funcRegistrationTable[1];
-extern const USB_DEVICE_MASTER_DESCRIPTOR usbMasterDescriptor;
 
 
 #endif /* _APP_H */

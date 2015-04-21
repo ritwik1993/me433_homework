@@ -8,7 +8,7 @@ config APP_CONFIG
     bool "Documentation"
     default y
     ---help---
-    IDH_HTML_APPS_USB_hid_basic
+    IDH_HTML_APPS_USB_hid_mouse
     ---endhelp---
 
 endmenu
