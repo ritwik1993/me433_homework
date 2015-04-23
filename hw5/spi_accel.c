@@ -2,8 +2,8 @@
 #include <xc.h>
 // interface with the LSM303D accelerometer/magnetometer using spi
 // Wire GND to GND, VDD to 3.3V, 
-// SDO1 (A4)          -> SDI (labeled SDA),
-// SDI1 (A1)            -> SDO
+// SDO1 (RPB2)          -> SDI (labeled SDA),
+// SDI1 (RPB6)            -> SDO
 // SCK1 (B14)       -> SCL
 // some digital pin (B5) -> CS
 
@@ -49,12 +49,12 @@ void acc_setup() {
   TRISBbits.TRISB4 = 0; // set CS to output pin 14 (RB5) and digital if necessary
   CS = 1;
 
-  // select a pin for SDI1 -pin 3 (RPA1)
-  SDI1Rbits.SDI1R = 0b0011;
+  // select a pin for SDI1 -pin 14 (RPB6)
+  SDI1Rbits.SDI1R = 0b0001;
 
-  // select a pin for SDO1 - pin 12 (RPA4)
+  // select a pin for SDO1 - pin 6 (RPB2)
   //RPA4Rbits.RPA4R = 0b0011;
-   RPB5Rbits.RPB5R = 0b0011;
+   RPB2Rbits.RPB2R = 0b0011;
 
   // Setup the master Master - SPI1
   // we manually control SS as a digital output 
