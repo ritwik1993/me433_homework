@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merger version="3"><dataSet config="unspecified"><source path="/root/AndroidStudioProjects/techcup_draft/openCVTutorial2MixedProcessing/build/intermediates/exploded-aar/techcup_draft/openCVLibrary2411/unspecified/assets"/></dataSet><dataSet config="main"><source path="/root/AndroidStudioProjects/techcup_draft/openCVTutorial2MixedProcessing/src/main/assets"/></dataSet><dataSet config="debug"><source path="/root/AndroidStudioProjects/techcup_draft/openCVTutorial2MixedProcessing/src/debug/assets"/></dataSet></merger>
